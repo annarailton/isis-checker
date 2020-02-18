@@ -1,7 +1,9 @@
 """Scrapes various EA and OURC websites for Isis river info and
 pretty prints to terminal."""
 
-from bs4 import BeautifulSoup
+import datetime
+import json
+import requests
 
 
 class bcolors:
@@ -11,65 +13,89 @@ class bcolors:
     BLUE = '\033[94m'
     ENDC = '\033[0m'
     BOLD = '\033[1m'
+    BLACK = '\033[7m'
+    GREY = '\033[90m'
 
 
-POSSIBLE_FLAG_COLOURS = ["green", "blue", "orange", "red", "black", "grey"]
+C2T = {  # colour to terminal code
+    'red': bcolors.RED,
+    'green': bcolors.GREEN,
+    'orange': bcolors.AMBER,
+    'amber': bcolors.AMBER,
+    'blue': bcolors.BLUE,
+    'black': bcolors.BLACK,
+    'grey': bcolors.GREY,
+}
+
+POSSIBLE_FLAG_COLOURS = ['green', 'blue', 'orange', 'red', 'black', 'grey']
 
 
-def get_farmour_data():
-    """Scrape the Farmour gauge data"""
-    with open('farmour.html', 'r') as farmour:
-        soup = BeautifulSoup(farmour, 'html.parser')
+def get_farmoor_data():
+    """Scrape the Farmoor gauge data
 
-    farmour_flow_rate = float(
-        soup.find(class_='pointlabelValue').contents[0][0:-4])
-    farmour_observation_time = soup.find(
-        class_='pointlabelTime').contents[0][1:]
+    TODO get info from API
+    https://environment.data.gov.uk/flood-monitoring/id/stations/1100TH/readings?latest
 
-    return farmour_flow_rate, farmour_observation_time
-
-
-def get_flag_data():
-    """Scrape the OURCs flag data
-
-    TODO could get flag colour direct from API?
-    TODO get date last updated
+    Returns:
+        str: flow rate (with unit)
+        str: colour (red, amber or green)
+        datetime.datetime: observation date
     """
 
-    with open('ourc_flags.html', 'r') as ourc:
-        soup = BeautifulSoup(ourc, 'html.parser')
+    response = requests.get(
+        f'https://environment.data.gov.uk/flood-monitoring/id/stations/1100TH/readings?latest'
+    )
+    content = json.loads(response.content.decode('utf-8'))
+    flow_rate = float(content['items'][1]['value'])
+    datetime_str = content['items'][1]['dateTime']
+    observation_datetime = datetime.datetime.strptime(datetime_str,
+                                                      '%Y-%m-%dT%H:%M:%SZ')
 
-    isis_background = soup.find(id='isis')['style'].split(' ')
-    isis_colour = isis_background[isis_background.index('background:') +
-                                  1][:-1]
-    godstow_background = soup.find(id='godstow')['style'].split(' ')
-    godstow_colour = godstow_background[godstow_background.index('background:')
-                                        + 1][:-1]
+    if flow_rate >= 55:
+        colour = 'red'
+    elif 45 <= flow_rate < 55:
+        colour = 'amber'
+    else:
+        colour = 'green'
 
-    return isis_colour, godstow_colour
+    return f'{flow_rate:.3f}m^3/s', colour, observation_datetime
+
+
+def get_flag_data(reach):
+    """Fetch the OURCs flag data from API.
+
+    Args:
+        reach (str): Either `isis` or `godstow`
+
+    Returns:
+        str: flag colour
+        datetime.datetime: observation date
+    """
+    assert reach in ['isis', 'godstow']
+
+    response = requests.get(f'https://ourcs.co.uk/api/flags/status/{reach}')
+    content = json.loads(response.content.decode('utf-8'))
+
+    colour = content['status_text'].lower()
+    observation_datetime = datetime.datetime.strptime(
+        content['set_date'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(microsecond=0)
+
+    return colour, observation_datetime
 
 
 if __name__ == '__main__':
-    farmour_flow_rate, farmour_observation_time = get_farmour_data()
+    farmoor_flow_rate, farmoor_colour, farmoor_time = get_farmoor_data()
 
-    isis_flag, godstow_flag = get_flag_data()
+    isis_flag, isis_flag_time = get_flag_data('isis')
+    godstow_flag, godstow_flag_time = get_flag_data('godstow')
 
-    if farmour_flow_rate >= 55:
-        colour = bcolors.RED
-    elif 45 <= farmour_flow_rate < 55:
-        colour = bcolors.AMBER
-    else:
-        colour = bcolors.GREEN
     print(
-        f'Farmour: {colour}{bcolors.BOLD}{farmour_flow_rate:.3f}m^3/s{bcolors.ENDC} at {farmour_observation_time}'
+        f'Farmoor: {C2T[farmoor_colour]}{bcolors.BOLD}{farmoor_flow_rate}{bcolors.ENDC} at {farmoor_time}'
     )
 
-    if isis_flag == 'red':
-      isis_colour = bcolors.RED
-    if godstow_flag == 'red':
-      godstow_colour = bcolors.RED
-
-    print(f'Isis flag: {isis_colour}{bcolors.BOLD}{isis_flag}{bcolors.ENDC}')
-    print(f'Godstow flag: {godstow_colour}{bcolors.BOLD}{godstow_flag}{bcolors.ENDC}')
-
-
+    print(
+        f'Isis flag: {C2T[isis_flag]}{bcolors.BOLD}{isis_flag}{bcolors.ENDC} at {isis_flag_time}'
+    )
+    print(
+        f'Godstow flag: {C2T[godstow_flag]}{bcolors.BOLD}{godstow_flag}{bcolors.ENDC} at {godstow_flag_time}'
+    )
