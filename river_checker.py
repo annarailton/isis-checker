@@ -5,6 +5,8 @@ import datetime
 import json
 import requests
 
+from bs4 import BeautifulSoup
+
 
 class bcolors:
     RED = '\033[91m'
@@ -130,7 +132,62 @@ def get_isis_flow_rate():
     else:
         colour = 'green'
 
-    return f'{flow_rate:.3f}m^3/s', colour, observation_datetime
+    return f'{flow_rate:.0f}m^3/s', colour, observation_datetime
+
+
+def get_ea_boards():
+    """
+    Scrapes EA board info from http://riverconditions.environment-agency.gov.uk
+
+    I _think_ the board for a particular lock `X` is given by the board colour for
+    the stretch X to Y.
+
+    TODO
+    - Check date time format for days (might use single digit)
+    - Check if 24h date format
+    - Check advice string when no stream warnings
+    - Double check which lock the stretches refer to (needs Iffley to go Yellow and Osney on Red)
+    """
+
+    request = requests.get('http://riverconditions.environment-agency.gov.uk')
+    soup = BeautifulSoup(request.text, 'html.parser')
+    advice = soup.find_all(class_='advices')
+
+    above_iffley = advice[0]
+    godstow_advice = above_iffley.find_all('td')[-3].find_all(
+        'span')[-1].contents[0].lower()
+    osney_advice = above_iffley.find_all('td')[-1].find_all(
+        'span')[-1].contents[0].lower()
+
+    below_iffley = advice[1]
+    iffley_advice = below_iffley.find_all('td')[1].find_all(
+        'span')[-1].contents[0].lower()
+    sandford_advice = below_iffley.find_all('td')[3].find_all(
+        'span')[-1].contents[0].lower()
+
+    advice_to_colour = {
+        'caution strong stream': 'red',
+        'caution stream increasing': 'yellow',
+        'caution stream decreasing': 'yellow',
+        'no stream warnings': 'grey',
+    }
+
+    last_update = soup.find(class_='last-update').contents[0].replace(
+        'Page Last Updated:', '').strip()
+    last_update_datetime = datetime.datetime.strptime(last_update,
+                                                      '%d %B %Y %H:%M')
+
+    return {
+        'last_update_datetime': last_update_datetime,
+        'godstow_advice': godstow_advice,
+        'godstow_colour': advice_to_colour[godstow_advice],
+        'osney_advice': osney_advice,
+        'osney_colour': advice_to_colour[osney_advice],
+        'iffley_advice': iffley_advice,
+        'iffley_colour': advice_to_colour[iffley_advice],
+        'sandford_advice': sandford_advice,
+        'sandford_colour': advice_to_colour[sandford_advice],
+    }
 
 
 if __name__ == '__main__':
@@ -140,6 +197,8 @@ if __name__ == '__main__':
 
     isis_flag, isis_flag_time = get_flag_data('isis')
     godstow_flag, godstow_flag_time = get_flag_data('godstow')
+
+    board_info = get_ea_boards()
 
     print(
         f'Farmoor: {C2T[farmoor_colour]}{bcolors.BOLD}{farmoor_flow_rate}{bcolors.ENDC} at {farmoor_time}'
@@ -153,3 +212,7 @@ if __name__ == '__main__':
     print(
         f'Godstow flag: {C2T[godstow_flag]}{bcolors.BOLD}{godstow_flag}{bcolors.ENDC} at {godstow_flag_time}'
     )
+    print(f'Godstow board: {C2T[board_info["godstow_colour"]]}{bcolors.BOLD}{board_info["godstow_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}')
+    print(f'Osney board: {C2T[board_info["osney_colour"]]}{bcolors.BOLD}{board_info["osney_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}')
+    print(f'Iffley board: {C2T[board_info["iffley_colour"]]}{bcolors.BOLD}{board_info["iffley_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}')
+    print(f'Sandford board: {C2T[board_info["sandford_colour"]]}{bcolors.BOLD}{board_info["sandford_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}')
