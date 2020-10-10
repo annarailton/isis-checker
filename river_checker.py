@@ -24,12 +24,14 @@ C2T = {  # colour to terminal code
     'green': bcolors.GREEN,
     'orange': bcolors.AMBER,
     'amber': bcolors.AMBER,
+    'yellow': bcolors.AMBER,
     'blue': bcolors.BLUE,
     'black': bcolors.BLACK,
     'grey': bcolors.GREY,
 }
 
-POSSIBLE_FLAG_COLOURS = ['green', 'blue', 'orange', 'red', 'black', 'grey']
+# POSSIBLE_FLAG_COLOURS = ['green', 'blue', 'orange', 'red', 'black', 'grey']
+# POSSIBLE_BOARD_COLOURS = ['grey', 'yellow', 'red']
 
 
 def get_farmoor_flow_rate():
