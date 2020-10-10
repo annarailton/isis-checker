@@ -49,8 +49,7 @@ def get_farmoor_flow_rate():
     content = json.loads(response.content.decode('utf-8'))
     flow_rate = float(content['items'][1]['value'])
     datetime_str = content['items'][1]['dateTime']
-    observation_datetime = datetime.datetime.strptime(datetime_str,
-                                                      '%Y-%m-%dT%H:%M:%SZ')
+    observation_datetime = datetime.datetime.strptime(datetime_str, '%Y-%m-%dT%H:%M:%SZ')
 
     if flow_rate >= 55:
         colour = 'red'
@@ -78,8 +77,10 @@ def get_flag_data(reach):
     content = json.loads(response.content.decode('utf-8'))
 
     colour = content['status_text'].lower()
-    observation_datetime = datetime.datetime.strptime(
-        content['set_date'], '%Y-%m-%dT%H:%M:%S.%fZ').replace(microsecond=0)
+    observation_datetime = datetime.datetime.strptime(content['set_date'],
+                                                      '%Y-%m-%dT%H:%M:%S.%fZ').replace(
+                                                          microsecond=0
+                                                      )
 
     return colour, observation_datetime
 
@@ -97,8 +98,8 @@ def get_isis_flow_rate():
         content = json.loads(response.content.decode('utf-8'))
         level = content['items']['latestReading']['value']
         observation_datetime = datetime.datetime.strptime(
-            content['items']['latestReading']['dateTime'],
-            '%Y-%m-%dT%H:%M:%SZ').replace(microsecond=0)
+            content['items']['latestReading']['dateTime'], '%Y-%m-%dT%H:%M:%SZ'
+        ).replace(microsecond=0)
 
         return level, observation_datetime
 
@@ -110,16 +111,19 @@ def get_isis_flow_rate():
     osney_downstream_level, osney_downstream_observation_datetime = _get_reading(
         requests.get(
             f'https://environment.data.gov.uk/flood-monitoring/id/measures/{osney_id}-level-{downstream}-i-15_min-mASD'
-        ))
+        )
+    )
 
     iffley_upstream_level, iffley_downstream_observation_datetime = _get_reading(
         requests.get(
             f'https://environment.data.gov.uk/flood-monitoring/id/measures/{iffley_id}-level-{upstream}-i-15_min-mASD'
-        ))
+        )
+    )
 
     # Pessimistically chose earliest time
-    observation_datetime = min(osney_downstream_observation_datetime,
-                               iffley_downstream_observation_datetime)
+    observation_datetime = min(
+        osney_downstream_observation_datetime, iffley_downstream_observation_datetime
+    )
 
     # Using Anu Dudhia formula
     flow_rate = 100 * (osney_downstream_level - iffley_upstream_level - 2.07)
@@ -149,6 +153,7 @@ def get_ea_boards():
     - Check if 24h date format
     - Check advice string when no stream warnings
     - Double check which lock the stretches refer to (needs Iffley to go Yellow and Osney on Red)
+    - Would be better to display like they do on the EA website e.g. "Godstow to Osney lock"
     """
 
     request = requests.get('http://riverconditions.environment-agency.gov.uk')
@@ -156,16 +161,12 @@ def get_ea_boards():
     advice = soup.find_all(class_='advices')
 
     above_iffley = advice[0]
-    godstow_advice = above_iffley.find_all('td')[-3].find_all(
-        'span')[-1].contents[0].lower()
-    osney_advice = above_iffley.find_all('td')[-1].find_all(
-        'span')[-1].contents[0].lower()
+    godstow_advice = above_iffley.find_all('td')[-3].find_all('span')[-1].contents[0].lower()
+    osney_advice = above_iffley.find_all('td')[-1].find_all('span')[-1].contents[0].lower()
 
     below_iffley = advice[1]
-    iffley_advice = below_iffley.find_all('td')[1].find_all(
-        'span')[-1].contents[0].lower()
-    sandford_advice = below_iffley.find_all('td')[3].find_all(
-        'span')[-1].contents[0].lower()
+    iffley_advice = below_iffley.find_all('td')[1].find_all('span')[-1].contents[0].lower()
+    sandford_advice = below_iffley.find_all('td')[3].find_all('span')[-1].contents[0].lower()
 
     advice_to_colour = {
         'caution strong stream': 'red',
@@ -174,10 +175,9 @@ def get_ea_boards():
         'no stream warnings': 'grey',
     }
 
-    last_update = soup.find(class_='last-update').contents[0].replace(
-        'Page Last Updated:', '').strip()
-    last_update_datetime = datetime.datetime.strptime(last_update,
-                                                      '%d %B %Y %H:%M')
+    last_update = soup.find(class_='last-update').contents[0].replace('Page Last Updated:',
+                                                                      '').strip()
+    last_update_datetime = datetime.datetime.strptime(last_update, '%d %B %Y %H:%M')
 
     return {
         'last_update_datetime': last_update_datetime,
@@ -205,16 +205,20 @@ if __name__ == '__main__':
     print(
         f'Farmoor: {C2T[farmoor_colour]}{bcolors.BOLD}{farmoor_flow_rate}{bcolors.ENDC} at {farmoor_time}'
     )
-    print(
-        f'Isis: {C2T[isis_colour]}{bcolors.BOLD}{isis_flow_rate}{bcolors.ENDC} at {isis_time}'
-    )
-    print(
-        f'Isis flag: {C2T[isis_flag]}{bcolors.BOLD}{isis_flag}{bcolors.ENDC} at {isis_flag_time}'
-    )
+    print(f'Isis: {C2T[isis_colour]}{bcolors.BOLD}{isis_flow_rate}{bcolors.ENDC} at {isis_time}')
+    print(f'Isis flag: {C2T[isis_flag]}{bcolors.BOLD}{isis_flag}{bcolors.ENDC} at {isis_flag_time}')
     print(
         f'Godstow flag: {C2T[godstow_flag]}{bcolors.BOLD}{godstow_flag}{bcolors.ENDC} at {godstow_flag_time}'
     )
-    print(f'Godstow board: {C2T[board_info["godstow_colour"]]}{bcolors.BOLD}{board_info["godstow_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}')
-    print(f'Osney board: {C2T[board_info["osney_colour"]]}{bcolors.BOLD}{board_info["osney_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}')
-    print(f'Iffley board: {C2T[board_info["iffley_colour"]]}{bcolors.BOLD}{board_info["iffley_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}')
-    print(f'Sandford board: {C2T[board_info["sandford_colour"]]}{bcolors.BOLD}{board_info["sandford_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}')
+    print(
+        f'Godstow board: {C2T[board_info["godstow_colour"]]}{bcolors.BOLD}{board_info["godstow_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}'
+    )
+    print(
+        f'Osney board: {C2T[board_info["osney_colour"]]}{bcolors.BOLD}{board_info["osney_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}'
+    )
+    print(
+        f'Iffley board: {C2T[board_info["iffley_colour"]]}{bcolors.BOLD}{board_info["iffley_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}'
+    )
+    print(
+        f'Sandford board: {C2T[board_info["sandford_colour"]]}{bcolors.BOLD}{board_info["sandford_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}'
+    )
