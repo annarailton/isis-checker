@@ -5,6 +5,9 @@ import datetime
 import json
 import requests
 
+from rich.console import Console
+from rich.table import Table
+
 from bs4 import BeautifulSoup
 
 
@@ -47,6 +50,7 @@ def get_farmoor_flow_rate():
         f'https://environment.data.gov.uk/flood-monitoring/id/stations/1100TH/readings?latest'
     )
     content = json.loads(response.content.decode('utf-8'))
+
     flow_rate = float(content['items'][1]['value'])
     datetime_str = content['items'][1]['dateTime']
     observation_datetime = datetime.datetime.strptime(datetime_str, '%Y-%m-%dT%H:%M:%SZ')
@@ -54,44 +58,18 @@ def get_farmoor_flow_rate():
     if flow_rate >= 55:
         colour = 'red'
     elif 45 <= flow_rate < 55:
-        colour = 'amber'
+        colour = 'yellow'
     else:
         colour = 'green'
 
-    return f'{flow_rate:.3f}m^3/s', colour, observation_datetime
-
-
-def get_flag_data(reach):
-    """Fetch the OURCs flag data from API.
-
-    Args:
-        reach (str): Either `isis` or `godstow`
-
-    Returns:
-        str: flag colour
-        datetime.datetime: observation date
-    """
-    assert reach in ['isis', 'godstow']
-
-    response = requests.get(f'https://ourcs.co.uk/api/flags/status/{reach}')
-    content = json.loads(response.content.decode('utf-8'))
-
-    colour = content['status_text'].lower()
-    observation_datetime = datetime.datetime.strptime(content['set_date'],
-                                                      '%Y-%m-%dT%H:%M:%S.%fZ').replace(
-                                                          microsecond=0
-                                                      )
-
-    return colour, observation_datetime
+    return ("Farmour", f'[{colour}]{flow_rate:.3f}[/{colour}]', f'{observation_datetime}')
 
 
 def get_isis_flow_rate():
     """Calculate Isis flow rate using Osney and Iffley river level data from  EA API.
 
-  Returns:
-      str: flow rate (with unit)
-      str: colour (red, amber or green)
-      datetime.datetime: observation (calculation) date
+   Returns:
+     tuple of flow rate, colour (red, amber or green) and observation (calculation) date
   """
     def _get_reading(response):
         """Get data from EA API"""
@@ -138,7 +116,39 @@ def get_isis_flow_rate():
     else:
         colour = 'green'
 
-    return f'{flow_rate:.0f}m^3/s', colour, observation_datetime
+    return ("Isis", f'[{colour}]{flow_rate:.3f}[/{colour}]', f'{observation_datetime}')
+
+
+def get_flag_data(reach):
+    """Fetch the OURCs flag data from API.
+
+    Args:
+        reach (str): Either `isis` or `godstow`
+
+    Returns:
+        str: flag colour
+        datetime.datetime: observation date
+    """
+    assert reach in ['isis', 'godstow']
+
+    response = requests.get(f'https://ourcs.co.uk/api/flags/status/{reach}')
+    content = json.loads(response.content.decode('utf-8'))
+
+    flag_colour = content['status_text'].lower()
+
+    if flag_colour == 'grey':
+        terminal_string = f'[bright_black]{flag_colour}[/bright_black]'
+    elif flag_colour == 'black':
+        terminal_string = f'[blink][reverse]{flag_colour}[/reverse][/blink]'
+    else:
+        terminal_string = f'[{flag_colour}]{flag_colour}[/{flag_colour}]'
+
+    observation_datetime = datetime.datetime.strptime(content['set_date'],
+                                                      '%Y-%m-%dT%H:%M:%S.%fZ').replace(
+                                                          microsecond=0
+                                                      )
+
+    return (reach.capitalize(), terminal_string, f'{observation_datetime}')
 
 
 def get_ea_boards():
@@ -149,10 +159,6 @@ def get_ea_boards():
     the stretch X to Y.
 
     TODO
-    - Check date time format for days (might use single digit)
-    - Check if 24h date format
-    - Check advice string when no stream warnings
-    - Double check which lock the stretches refer to (needs Iffley to go Yellow and Osney on Red)
     - Would be better to display like they do on the EA website e.g. "Godstow to Osney lock"
     """
 
@@ -168,57 +174,51 @@ def get_ea_boards():
     iffley_advice = below_iffley.find_all('td')[1].find_all('span')[-1].contents[0].lower()
     sandford_advice = below_iffley.find_all('td')[3].find_all('span')[-1].contents[0].lower()
 
-    advice_to_colour = {
-        'caution strong stream': 'red',
-        'caution stream increasing': 'yellow',
-        'caution stream decreasing': 'yellow',
-        'no stream warnings': 'grey',
+    advice_to_emoji = {
+        'caution strong stream': ':red_square:',
+        'caution stream increasing': ':yellow_square::arrow_double_up:',
+        'caution stream decreasing': ':yellow_square::arrow_double_down:',
+        'no stream warnings': ':green_square:',
     }
 
     last_update = soup.find(class_='last-update').contents[0].replace('Page Last Updated:',
                                                                       '').strip()
     last_update_datetime = datetime.datetime.strptime(last_update, '%d %B %Y %H:%M')
 
-    return {
-        'last_update_datetime': last_update_datetime,
-        'godstow_advice': godstow_advice,
-        'godstow_colour': advice_to_colour[godstow_advice],
-        'osney_advice': osney_advice,
-        'osney_colour': advice_to_colour[osney_advice],
-        'iffley_advice': iffley_advice,
-        'iffley_colour': advice_to_colour[iffley_advice],
-        'sandford_advice': sandford_advice,
-        'sandford_colour': advice_to_colour[sandford_advice],
-    }
+    return [
+        ('Godstow', advice_to_emoji[godstow_advice], godstow_advice, f'{last_update_datetime}'),
+        ('Osney', advice_to_emoji[osney_advice], osney_advice, f'{last_update_datetime}'),
+        ('Iffley', advice_to_emoji[iffley_advice], iffley_advice, f'{last_update_datetime}'),
+        ('Sandford', advice_to_emoji[sandford_advice], sandford_advice, f'{last_update_datetime}'),
+    ]
 
 
 if __name__ == '__main__':
 
-    farmoor_flow_rate, farmoor_colour, farmoor_time = get_farmoor_flow_rate()
-    isis_flow_rate, isis_colour, isis_time = get_isis_flow_rate()
+    console = Console()
 
-    isis_flag, isis_flag_time = get_flag_data('isis')
-    godstow_flag, godstow_flag_time = get_flag_data('godstow')
+    flow_rate_table = Table(show_header=True, header_style="bold")
+    flow_rate_table.add_column("Location")
+    flow_rate_table.add_column("Flow rate (m^3/s)")
+    flow_rate_table.add_column("Date last updated")
+    flow_rate_table.add_row(*get_farmoor_flow_rate())
+    flow_rate_table.add_row(*get_isis_flow_rate())
 
-    board_info = get_ea_boards()
+    flag_table = Table(show_header=True, header_style="bold")
+    flag_table.add_column("Location")
+    flag_table.add_column("Flag :white_flag:")
+    flag_table.add_column("Date last updated")
+    flag_table.add_row(*get_flag_data('isis'))
+    flag_table.add_row(*get_flag_data('godstow'))
 
-    print(
-        f'Farmoor: {C2T[farmoor_colour]}{bcolors.BOLD}{farmoor_flow_rate}{bcolors.ENDC} at {farmoor_time}'
-    )
-    print(f'Isis: {C2T[isis_colour]}{bcolors.BOLD}{isis_flow_rate}{bcolors.ENDC} at {isis_time}')
-    print(f'Isis flag: {C2T[isis_flag]}{bcolors.BOLD}{isis_flag}{bcolors.ENDC} at {isis_flag_time}')
-    print(
-        f'Godstow flag: {C2T[godstow_flag]}{bcolors.BOLD}{godstow_flag}{bcolors.ENDC} at {godstow_flag_time}'
-    )
-    print(
-        f'Godstow board: {C2T[board_info["godstow_colour"]]}{bcolors.BOLD}{board_info["godstow_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}'
-    )
-    print(
-        f'Osney board: {C2T[board_info["osney_colour"]]}{bcolors.BOLD}{board_info["osney_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}'
-    )
-    print(
-        f'Iffley board: {C2T[board_info["iffley_colour"]]}{bcolors.BOLD}{board_info["iffley_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}'
-    )
-    print(
-        f'Sandford board: {C2T[board_info["sandford_colour"]]}{bcolors.BOLD}{board_info["sandford_advice"]}{bcolors.ENDC} at {board_info["last_update_datetime"]}'
-    )
+    board_table = Table(show_header=True, header_style="bold")
+    board_table.add_column("Lock")
+    board_table.add_column("Board")
+    board_table.add_column("Advice")
+    board_table.add_column("Date last updated")
+    for row in get_ea_boards():
+        board_table.add_row(*row)
+
+    console.print(flow_rate_table)
+    console.print(flag_table)
+    console.print(board_table)
